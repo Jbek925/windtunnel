@@ -45,11 +45,24 @@ def test_round_trip_cost_in_engine_matches_hand_calculation() -> None:
         bars, FixedSignal([1, 1, 0, 0, 0]), FixedFraction(), cm, periods_per_year=365
     )
     assert res.n_trades == 2
-    # bought 0.01 units at 100 (notional 1.0), sold 0.01 units at 100 (notional 1.0)
-    assert res.equity.iloc[-1] == pytest.approx(1.0 - 2 * 0.0015, rel=1e-12)
-    assert res.total_costs == pytest.approx(2 * 0.0015)
-    assert res.costs["fees"].sum() == pytest.approx(2 * 0.001)
-    assert res.costs["slippage"].sum() == pytest.approx(2 * 0.0005)
+    # Buy sized so post-cost weight is exactly 100%: notional N = 1/(1+r), cost N·r.
+    # Sell the same N at the same price, cost N·r again.
+    r = 0.0015
+    n = 1 / (1 + r)
+    assert res.equity.iloc[-1] == pytest.approx((1 - r) / (1 + r), rel=1e-12)
+    assert res.total_costs == pytest.approx(2 * n * r)
+    assert res.costs["fees"].sum() == pytest.approx(2 * n * 0.001)
+    assert res.costs["slippage"].sum() == pytest.approx(2 * n * 0.0005)
+
+
+def test_full_buy_never_borrows_cash() -> None:
+    bars = make_bars([100.0] * 3, [100.0] * 3)
+    cm = CostModel(taker_fee_bps=50, slippage_bps=50)  # 1% total, exaggerated
+    res = run_backtest(bars, FixedSignal([1, 1, 1]), FixedFraction(), cm, periods_per_year=365)
+    trade = res.trades.iloc[0]
+    cash_after = 1.0 - trade["notional"] - trade["fee"] - trade["slippage"]
+    assert cash_after == pytest.approx(0.0, abs=1e-12)
+    assert res.weights.iloc[1] == pytest.approx(1.0)
 
 
 def test_funding_charged_on_held_notional() -> None:

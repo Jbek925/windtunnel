@@ -167,14 +167,21 @@ def simulate(
             w_target = tgt[i - 1]
             exit_to_flat = w_target == 0.0 and units != 0.0
             if eq_open > 0 and (abs(w_target - w_before) > rebalance_band or exit_to_flat):
-                new_units = w_target * eq_open / o[i]
-                qty = new_units - units
+                # Size the trade so the weight *after paying costs* equals the target.
+                # Otherwise a 100% buy would pay its fee with borrowed cash.
+                # Signed notional N, cost |N|·r:  h + N = w·(E − |N|·r)
+                #   ⇒  N = (w·E − h) / (1 + w·r·sign(N))
+                rate = fee_rate + slip_rate[i]
+                held = units * o[i]
+                gap = w_target * eq_open - held
+                signed_notional = gap / (1.0 + w_target * rate * np.sign(gap))
+                qty = signed_notional / o[i]
                 if qty != 0.0:
-                    notional = abs(qty) * o[i]
+                    notional = abs(signed_notional)
                     fee = notional * fee_rate
                     sl = notional * slip_rate[i]
-                    cash -= qty * o[i] + fee + sl
-                    units = new_units
+                    cash -= signed_notional + fee + sl
+                    units += qty
                     fees[i], slip[i] = fee, sl
                     trades.append(
                         {
