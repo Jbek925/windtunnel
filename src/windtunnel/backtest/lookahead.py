@@ -54,8 +54,9 @@ def check_causal(
         raise ValueError("not enough bars to check for lookahead")
     full = fn(bars)
     rng = np.random.default_rng(seed)
-    cuts = rng.choice(np.arange(min_history, n - 1), size=min(n_checks, n - 1 - min_history),
-                      replace=False)  # fmt: skip
+    cuts = rng.choice(
+        np.arange(min_history, n - 1), size=min(n_checks, n - 1 - min_history), replace=False
+    )
     bad: list[str] = []
     for t in sorted(int(x) for x in cuts):
         truncated = float(fn(bars.iloc[: t + 1]).iloc[-1])

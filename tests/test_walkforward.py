@@ -36,8 +36,16 @@ def test_parameter_selection_never_sees_test_data() -> None:
         scored_until.append(returns.index[-1])
         return float(returns.mean())
 
-    res = walk_forward(bars, SpyTrend, FixedFraction(), CostModel(), train_bars=400, test_bars=200,
-                       periods_per_year=365, objective=spy_objective)  # fmt: skip
+    res = walk_forward(
+        bars,
+        SpyTrend,
+        FixedFraction(),
+        CostModel(),
+        train_bars=400,
+        test_bars=200,
+        periods_per_year=365,
+        objective=spy_objective,
+    )
     grid_size = len(SpyTrend.grid())
     assert len(res.folds) == 3
     assert len(scored_until) == 3 * grid_size
@@ -54,8 +62,15 @@ def test_parameter_selection_never_sees_test_data() -> None:
 
 def test_oos_is_stitched_test_windows_only() -> None:
     bars = gbm(1000, seed=22)
-    res = walk_forward(bars, SmaTrend, FixedFraction(), CostModel(), train_bars=400, test_bars=200,
-                       periods_per_year=365)  # fmt: skip
+    res = walk_forward(
+        bars,
+        SmaTrend,
+        FixedFraction(),
+        CostModel(),
+        train_bars=400,
+        test_bars=200,
+        periods_per_year=365,
+    )
     assert len(res.oos_returns) == 600
     assert res.oos_returns.index[0] == bars.index[400]
     assert res.oos_returns.index.is_unique and res.oos_returns.index.is_monotonic_increasing

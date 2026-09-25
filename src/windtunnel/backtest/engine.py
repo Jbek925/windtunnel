@@ -207,8 +207,16 @@ def simulate(
     eq = pd.Series(equity[start:], index=idx, name="equity")
     prev = np.concatenate([[initial_equity], eq.to_numpy()[:-1]])
     rets = pd.Series(eq.to_numpy() / prev - 1.0, index=idx, name="returns")
-    trade_cols = ["timestamp", "qty", "price", "notional", "fee", "slippage",
-                  "weight_before", "weight_after"]  # fmt: skip
+    trade_cols = [
+        "timestamp",
+        "qty",
+        "price",
+        "notional",
+        "fee",
+        "slippage",
+        "weight_before",
+        "weight_after",
+    ]
     return BacktestResult(
         equity=eq,
         returns=rets,
@@ -226,4 +234,44 @@ def simulate(
             "initial_equity": initial_equity,
             "rebalance_band": rebalance_band,
         },
+    )
+
+
+def concat_results(results: list[BacktestResult]) -> BacktestResult:
+    """Chain consecutive, non-overlapping results into one, compounding returns.
+
+    Used to stitch walk-forward test folds. Equity is rebuilt from the chained returns,
+    starting at the first result's initial equity. Trades and costs are rescaled to that
+    equity path, so costs stay expressed in the stitched curve's currency.
+    """
+    if not results:
+        raise ValueError("nothing to concatenate")
+    initial = float(results[0].config.get("initial_equity", 1.0))
+    parts_r, parts_w, parts_t, parts_trades, parts_costs = [], [], [], [], []
+    level = initial
+    for res in results:
+        fold_initial = float(res.config.get("initial_equity", 1.0))
+        scale = level / fold_initial
+        parts_r.append(res.returns)
+        parts_w.append(res.weights)
+        parts_t.append(res.target_weights)
+        trades = res.trades.copy()
+        for col in ("qty", "notional", "fee", "slippage"):
+            trades[col] = trades[col] * scale
+        parts_trades.append(trades)
+        parts_costs.append(res.costs * scale)
+        level *= float(np.prod(1.0 + res.returns.to_numpy()))
+    returns = pd.concat(parts_r)
+    if not returns.index.is_unique:
+        raise ValueError("results overlap in time")
+    equity = initial * (1.0 + returns).cumprod()
+    return BacktestResult(
+        equity=equity.rename("equity"),
+        returns=returns.rename("returns"),
+        weights=pd.concat(parts_w),
+        target_weights=pd.concat(parts_t),
+        trades=pd.concat(parts_trades, ignore_index=True),
+        costs=pd.concat(parts_costs),
+        periods_per_year=results[0].periods_per_year,
+        config={**results[0].config, "stitched_from": len(results)},
     )

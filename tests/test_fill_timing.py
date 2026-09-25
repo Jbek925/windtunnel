@@ -16,9 +16,13 @@ CLOSES = [105.0, 115.0, 100.0, 92.0, 97.0]
 
 def _run(signal: list[float], **kw) -> object:  # type: ignore[no-untyped-def]
     return run_backtest(
-        make_bars(OPENS, CLOSES), FixedSignal(signal), FixedFraction(), ZERO_COSTS,
-        periods_per_year=365, **kw,
-    )  # fmt: skip
+        make_bars(OPENS, CLOSES),
+        FixedSignal(signal),
+        FixedFraction(),
+        ZERO_COSTS,
+        periods_per_year=365,
+        **kw,
+    )
 
 
 def test_signal_at_t_only_affects_position_from_open_t_plus_1() -> None:
@@ -72,15 +76,21 @@ def test_same_bar_signal_has_no_edge_on_random_walk() -> None:
     """If the engine forgot the shift, trading on a bar's own return would look like
     a money machine. With the correct next-open fill it must be ~zero on a random walk."""
     bars = gbm(6000, sigma_ann=0.6, seed=11)
-    res = run_backtest(bars, SameBarReturn(), FixedFraction(), ZERO_COSTS, periods_per_year=365,
-                       long_only=False)  # fmt: skip
+    res = run_backtest(
+        bars, SameBarReturn(), FixedFraction(), ZERO_COSTS, periods_per_year=365, long_only=False
+    )
     r = res.returns.to_numpy()
     t_stat = r.mean() / (r.std(ddof=1) / np.sqrt(len(r)))
     assert abs(t_stat) < 4
 
     # control: the same signal *without* the shift (the bug we guard against) is wildly profitable
-    wrong = simulate(bars, SameBarReturn().signal(bars).shift(-1), ZERO_COSTS, periods_per_year=365,
-                     long_only=False)  # fmt: skip
+    wrong = simulate(
+        bars,
+        SameBarReturn().signal(bars).shift(-1),
+        ZERO_COSTS,
+        periods_per_year=365,
+        long_only=False,
+    )
     rw = wrong.returns.dropna().to_numpy()
     assert rw.mean() / (rw.std(ddof=1) / np.sqrt(len(rw))) > 20
 
@@ -90,11 +100,23 @@ def test_weights_drift_and_rebalancing_is_charged() -> None:
 
     bars = gbm(200, seed=3)
     cm = CostModel(taker_fee_bps=10, slippage_bps=0)
-    half = run_backtest(bars, FixedSignal([1.0] * 200), FixedFraction(0.5), cm,
-                        periods_per_year=365, rebalance_band=0.0)  # fmt: skip
+    half = run_backtest(
+        bars,
+        FixedSignal([1.0] * 200),
+        FixedFraction(0.5),
+        cm,
+        periods_per_year=365,
+        rebalance_band=0.0,
+    )
     assert half.n_trades > 100  # with no band: re-balancing back to 50% every bar
-    banded = run_backtest(bars, FixedSignal([1.0] * 200), FixedFraction(0.5), cm,
-                          periods_per_year=365, rebalance_band=0.05)  # fmt: skip
+    banded = run_backtest(
+        bars,
+        FixedSignal([1.0] * 200),
+        FixedFraction(0.5),
+        cm,
+        periods_per_year=365,
+        rebalance_band=0.05,
+    )
     assert banded.n_trades < half.n_trades
     full = run_backtest(
         bars, FixedSignal([1.0] * 200), FixedFraction(1.0), cm, periods_per_year=365
@@ -106,8 +128,14 @@ def test_exit_to_flat_ignores_band() -> None:
     # enter 30% at open1; the price crashes 100 → 20 so the holding drifts to ~8% of equity.
     # The exit decision (0.08 → 0) is inside the 0.25 band, but exits must always execute.
     bars = make_bars([100, 100, 20, 20, 20], [100, 100, 20, 20, 20])
-    res = run_backtest(bars, FixedSignal([0.3, 0.3, 0, 0, 0]), FixedFraction(), ZERO_COSTS,
-                       periods_per_year=365, rebalance_band=0.25)  # fmt: skip
+    res = run_backtest(
+        bars,
+        FixedSignal([0.3, 0.3, 0, 0, 0]),
+        FixedFraction(),
+        ZERO_COSTS,
+        periods_per_year=365,
+        rebalance_band=0.25,
+    )
     assert res.weights.iloc[1] == pytest.approx(0.3)
     assert 0 < res.weights.iloc[2] < 0.25  # drifted, not topped up (inside band)
     assert res.weights.iloc[3] == 0.0  # exit executed despite the band
@@ -119,5 +147,10 @@ def test_signal_index_mismatch_rejected() -> None:
             return super().signal(bars).iloc[1:]
 
     with pytest.raises(ValueError, match=r"bars\.index"):
-        run_backtest(make_bars(OPENS, CLOSES), Bad([1] * 5), FixedFraction(), ZERO_COSTS,
-                     periods_per_year=365)  # fmt: skip
+        run_backtest(
+            make_bars(OPENS, CLOSES),
+            Bad([1] * 5),
+            FixedFraction(),
+            ZERO_COSTS,
+            periods_per_year=365,
+        )

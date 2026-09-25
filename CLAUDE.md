@@ -32,6 +32,10 @@ A Python research framework for systematic trading strategies. It is a **learnin
 - **Tests never use the network.** They use `windtunnel.data.synthetic` or fake exchange objects. Tests that genuinely need the network are marked `@pytest.mark.network` and skipped by default.
 - Dependencies are pinned exactly in `pyproject.toml` and managed with uv (`uv.lock` is committed).
 - Minimal dependencies: no backtesting frameworks. The mechanics should stay visible.
+- **Simplification never removes safety.** Any cleanup or refactor (including tools like
+  ponytail) must keep every test, the data validation, the lookahead checks, the risk
+  limits and all the live-trading safeguards (the opt-in gate, capital cap and method
+  allow-list). Code that looks redundant here is often a deliberate guard.
 
 ## Commands
 

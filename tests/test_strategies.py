@@ -86,15 +86,18 @@ def test_mean_reversion_buys_dips_on_oscillating_series() -> None:
     idx = pd.date_range("2024-01-01", periods=300, freq="D", tz="UTC", name="timestamp")
     idx = idx.as_unit("ns")
     close = 100 + 5 * np.sin(np.arange(300) / 5.0)
-    bars = pd.DataFrame({"open": close, "high": close + 1, "low": close - 1, "close": close,
-                         "volume": 1.0}, index=idx)  # fmt: skip
+    bars = pd.DataFrame(
+        {"open": close, "high": close + 1, "low": close - 1, "close": close, "volume": 1.0},
+        index=idx,
+    )
     strat = ZScoreMeanReversion(lookback=20, entry=1.0)
     sig = strat.signal(bars)
     z = strat.zscore(bars)
     assert (sig[z < -1.2] == 1).all()  # deep below the mean → long
     assert (sig[z > 1.2] == -1).all()  # far above → short
-    res = run_backtest(bars, strat, FixedFraction(), ZERO_COSTS, periods_per_year=365,
-                       long_only=False)  # fmt: skip
+    res = run_backtest(
+        bars, strat, FixedFraction(), ZERO_COSTS, periods_per_year=365, long_only=False
+    )
     assert res.equity.iloc[-1] > 1.0  # a sine wave is the ideal case for this rule
 
 
@@ -118,8 +121,16 @@ def test_standard_benchmarks() -> None:
 def test_no_edge_on_random_walk_walk_forward(cls) -> None:  # type: ignore[no-untyped-def]
     """Out-of-sample on a driftless random walk, no strategy should look significant."""
     bars = gbm(3000, sigma_ann=0.6, seed=99)
-    wf = walk_forward(bars, cls, FixedFraction(), CostModel(), train_bars=730, test_bars=365,
-                      periods_per_year=365, long_only=False)  # fmt: skip
+    wf = walk_forward(
+        bars,
+        cls,
+        FixedFraction(),
+        CostModel(),
+        train_bars=730,
+        test_bars=365,
+        periods_per_year=365,
+        long_only=False,
+    )
     r = wf.oos_returns.to_numpy()
     t_stat = r.mean() / (r.std(ddof=1) / np.sqrt(len(r)))
     assert t_stat < 3.0  # costs make negative the expected sign; a big positive = bug

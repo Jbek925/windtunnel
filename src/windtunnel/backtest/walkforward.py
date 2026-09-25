@@ -32,7 +32,7 @@ from typing import Any
 import pandas as pd
 
 from windtunnel.backtest.costs import CostModel
-from windtunnel.backtest.engine import run_backtest
+from windtunnel.backtest.engine import BacktestResult, concat_results, run_backtest
 from windtunnel.backtest.sizing import Sizer
 from windtunnel.evaluation.metrics import sharpe_ratio
 from windtunnel.strategies.base import Strategy
@@ -51,7 +51,12 @@ class Fold:
     test_end: pd.Timestamp
     best_params: dict[str, Any]
     train_score: float
-    test_returns: pd.Series
+    test_result: BacktestResult
+
+    @property
+    def test_returns(self) -> pd.Series:
+        """Return the net returns over the test window."""
+        return self.test_result.returns
 
 
 @dataclass
@@ -59,9 +64,15 @@ class WalkForwardResult:
     """The stitched out-of-sample result plus a full record of what was tried."""
 
     folds: list[Fold]
-    oos_returns: pd.Series
+    oos_result: BacktestResult
+    """All test windows chained together: the honest out-of-sample record."""
     trials: pd.DataFrame
     periods_per_year: float
+
+    @property
+    def oos_returns(self) -> pd.Series:
+        """Return the stitched out-of-sample net returns."""
+        return self.oos_result.returns.rename("oos_returns")
 
     @property
     def oos_equity(self) -> pd.Series:
@@ -109,6 +120,8 @@ def walk_forward(
     objective: Objective = _default_objective,
 ) -> WalkForwardResult:
     """Run a rolling walk-forward evaluation. See the module docstring for the procedure."""
+    if step_bars is not None and step_bars < test_bars:
+        raise ValueError("step_bars < test_bars would overlap test windows")
     grid = strategy_cls.grid() or [{}]
     folds: list[Fold] = []
     trial_rows: list[dict[str, Any]] = []
@@ -118,9 +131,13 @@ def walk_forward(
         best_score = float("-inf")
         for params in grid:
             res = run_backtest(
-                train, strategy_cls(**params), sizer, costs,
-                periods_per_year=periods_per_year, long_only=long_only,
-            )  # fmt: skip
+                train,
+                strategy_cls(**params),
+                sizer,
+                costs,
+                periods_per_year=periods_per_year,
+                long_only=long_only,
+            )
             score = objective(res.returns, periods_per_year)
             trial_rows.append({"fold": k, "params": repr(sorted(params.items())), "score": score})
             if score > best_score:  # ties keep the earlier (first-listed) params
@@ -129,9 +146,14 @@ def walk_forward(
         # test: warm up on the train bars, score only [te0, te1). Nothing after te1 exists here.
         window = bars.iloc[tr0:te1]
         test_res = run_backtest(
-            window, strategy_cls(**best_params), sizer, costs,
-            periods_per_year=periods_per_year, long_only=long_only, start=te0 - tr0,
-        )  # fmt: skip
+            window,
+            strategy_cls(**best_params),
+            sizer,
+            costs,
+            periods_per_year=periods_per_year,
+            long_only=long_only,
+            start=te0 - tr0,
+        )
         folds.append(
             Fold(
                 train_start=bars.index[tr0],
@@ -140,15 +162,13 @@ def walk_forward(
                 test_end=bars.index[te1 - 1],
                 best_params=best_params,
                 train_score=best_score,
-                test_returns=test_res.returns,
+                test_result=test_res,
             )
         )
 
-    oos = pd.concat([f.test_returns for f in folds])
-    oos = oos[~oos.index.duplicated(keep="first")]  # overlapping tests if step < test_bars
     return WalkForwardResult(
         folds=folds,
-        oos_returns=oos.rename("oos_returns"),
+        oos_result=concat_results([f.test_result for f in folds]),
         trials=pd.DataFrame(trial_rows),
         periods_per_year=periods_per_year,
     )
