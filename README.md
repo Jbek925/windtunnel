@@ -100,8 +100,9 @@ Strategies: `ma_trend`, `ts_momentum`, `zscore_mr`, `buy_and_hold`. Useful flags
 | `--prior-trials` | 0 | how many other configurations you already tried on this data. **Be honest.** |
 | `--long-short` | off | allow shorts (research only; the spot/live setup is long/flat) |
 
-Each run prints a verdict and a results table, and writes `reports/<market>_<strategy>/report.html`
-(open it in a browser) plus `report.md`.
+Each run prints a verdict and a results table, and writes a new folder per run, e.g.
+`reports/BTC_USDT_1d_ma_trend/2026-09-25_210608_fee40_slip5_fixed/report.html` (open it in a
+browser) plus `report.md`. Earlier runs are kept, so you can compare settings side by side.
 
 ### Reading the report
 

@@ -164,10 +164,21 @@ def _cmd_backtest(args: argparse.Namespace) -> int:
         seed=args.seed,
         notes=notes,
     )
+    # One folder per run, so earlier reports are never overwritten, e.g.
+    # reports/BTC_USDT_1d_ma_trend/2026-09-25_2106_fee40_slip5_fixed/report.html
+    run_name = (
+        f"{pd.Timestamp.now():%Y-%m-%d_%H%M%S}_fee{args.fee_bps:g}_slip{args.slippage_bps:g}"
+        f"_{args.sizer}{'_longshort' if args.long_short else ''}"
+    )
     out_dir = (
         Path(args.out)
         / f"{title.split(' (')[0].replace('/', '_').replace(' ', '_')}_{args.strategy}"
+        / run_name
     )
+    n = 2
+    while out_dir.exists():  # two runs within the same second
+        out_dir = out_dir.with_name(f"{run_name}_{n}")
+        n += 1
     html_path, md_path = write_report(ev, out_dir)
     print(f"== {title}: {args.strategy} (walk-forward, out-of-sample, after costs)\n")
     for line in ev.verdict:

@@ -53,23 +53,24 @@ def test_markdown_mentions_multiple_testing(ev: Evaluation) -> None:
     assert "Configurations tried" in to_markdown(ev)
 
 
-def test_cli_backtest_synthetic(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
-    rc = main(
-        [
-            "backtest",
-            "--synthetic",
-            "900",
-            "--strategy",
-            "ts_momentum",
-            "--train-days",
-            "300",
-            "--test-days",
-            "150",
-            "--out",
-            str(tmp_path),
-        ]
-    )
-    assert rc == 0
+def test_cli_backtest_synthetic_keeps_every_run(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    args = [
+        "backtest",
+        "--synthetic",
+        "900",
+        "--strategy",
+        "ts_momentum",
+        "--train-days",
+        "300",
+        "--test-days",
+        "150",
+        "--out",
+        str(tmp_path),
+    ]
+    assert main(args) == 0
     out = capsys.readouterr().out
     assert "walk-forward, out-of-sample, after costs" in out and "buy & hold" in out
-    assert list(tmp_path.glob("*/report.html"))
+    assert main([*args, "--fee-bps", "40"]) == 0  # a second run must not overwrite the first
+    reports = sorted(tmp_path.glob("*/*/report.html"))
+    assert len(reports) == 2
+    assert any("fee40" in str(p) for p in reports) and any("fee10" in str(p) for p in reports)
