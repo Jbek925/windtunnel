@@ -45,8 +45,8 @@ All data comes from public endpoints, and no API keys are needed.
 # the whole default universe: BTC/USDT and ETH/USDT (1h, 1d) plus SPY/QQQ/GLD/TLT (1d)
 uv run windtunnel fetch --all --start 2017-01-01
 
-# one symbol; switch exchange if Binance is blocked where you live
-uv run windtunnel fetch --source ccxt --exchange kraken --symbol BTC/USDT --timeframe 1d
+# one symbol; if Binance is blocked where you live, use Bitstamp (long USD history)
+uv run windtunnel fetch --source ccxt --exchange bitstamp --symbol BTC/USD --timeframe 1d
 
 # re-print the data-quality report for something already cached
 uv run windtunnel validate --source ccxt --symbol BTC/USDT --timeframe 1d
@@ -54,6 +54,11 @@ uv run windtunnel validate --source ccxt --symbol BTC/USDT --timeframe 1d
 
 Data is cached under `data/cache/` (gitignored) as parquet, with a `.meta.json`
 sidecar. Running `fetch` again only downloads new bars.
+
+**Check the first date in the report.** Some exchanges only serve recent history through
+their public API. Kraken returns only the latest 720 bars, which is about 2 years daily or a
+month hourly. That's fine for paper trading but far too short for a backtest. For history,
+use Binance or Bitstamp.
 
 ### Reading the validation report
 
