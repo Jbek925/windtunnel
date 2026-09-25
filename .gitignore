@@ -10,13 +10,14 @@ htmlcov/
 dist/
 build/
 
-# Local data, databases, reports (never committed)
-data/
+# Local data, databases, reports (never committed).
+# Leading "/" = only the top-level folders, NOT src/windtunnel/data (source code!).
+/data/
+/reports/
+/logs/
 *.sqlite
 *.sqlite3
 *.db
-reports/
-logs/
 
 # Secrets: API keys live only in environment variables
 .env
