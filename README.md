@@ -170,6 +170,24 @@ Logs go to `logs/trader.log` (rotated). For phone alerts, put
 `WINDTUNNEL_ALERT_WEBHOOK=https://ntfy.sh/<a-long-random-topic>` in `~/.config/windtunnel.env`
 and install the ntfy app. Warnings, errors and kill-switch events will be pushed to you.
 
+### Weekly Telegram digest
+
+Every Sunday you get a short, jargon-free message: did the pretend account go up or down,
+would simply holding BTC have done better, what trades it made, and whether anything is broken.
+
+1. In Telegram, message **@BotFather**, send `/newbot`, and copy the **token**.
+2. Send any message to your new bot. Then open `https://api.telegram.org/bot<TOKEN>/getUpdates`
+   in a browser and copy the number after `"chat":{"id":`.
+3. Add both to `~/.config/windtunnel.env` on the server (never to the repo):
+   ```
+   WINDTUNNEL_TELEGRAM_TOKEN=123456:ABC...
+   WINDTUNNEL_TELEGRAM_CHAT_ID=987654321
+   ```
+4. Test it: `uv run windtunnel digest --config configs/my_paper.toml --dry-run` prints the
+   message, and without `--dry-run` it sends it.
+5. Schedule it: see `deploy/windtunnel-digest.timer` (systemd), or the line in
+   `deploy/crontab.example`.
+
 ## 5. Comparing paper with the backtest
 
 ```bash

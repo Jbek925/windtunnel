@@ -8,3 +8,6 @@
 
 # Hourly bars: 2 minutes past every hour
 # 2 * * * *  cd $HOME/windtunnel && $HOME/.local/bin/uv run windtunnel paper run --once --config configs/paper_example.toml >> logs/cron.log 2>&1
+
+# Weekly Telegram digest: Sundays 09:00. cron doesn't read ~/.config/windtunnel.env, so source it.
+# 0 9 * * 0  cd $HOME/windtunnel && set -a && . $HOME/.config/windtunnel.env && set +a && $HOME/.local/bin/uv run windtunnel digest --config configs/paper_example.toml >> logs/cron.log 2>&1

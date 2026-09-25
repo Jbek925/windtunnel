@@ -281,6 +281,25 @@ def _cmd_paper(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_digest(args: argparse.Namespace) -> int:
+    from windtunnel.config import load_config
+    from windtunnel.paper.digest import build_digest, send_telegram
+    from windtunnel.paper.store import Store
+
+    cfg = load_config(args.config)
+    text = build_digest(Store(cfg.db_path), cfg, days=args.days)
+    print(text)
+    if args.dry_run:
+        return 0
+    try:
+        send_telegram(text)
+    except RuntimeError as exc:
+        print(f"\nnot sent: {exc}", file=sys.stderr)
+        return 1
+    print("\nsent to Telegram ✅")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser."""
     parser = argparse.ArgumentParser(
@@ -358,6 +377,12 @@ def build_parser() -> argparse.ArgumentParser:
     c = psub.add_parser("compare", help="compare paper results with the backtest")
     c.add_argument("--config", required=True)
     p.set_defaults(func=_cmd_paper)
+
+    d = sub.add_parser("digest", help="plain-English weekly summary, sent to Telegram")
+    d.add_argument("--config", required=True)
+    d.add_argument("--days", type=int, default=7)
+    d.add_argument("--dry-run", action="store_true", help="print it, don't send")
+    d.set_defaults(func=_cmd_digest)
     return parser
 
 

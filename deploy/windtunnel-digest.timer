@@ -1,0 +1,13 @@
+# Weekly digest: Sundays at 09:00 (server local time). Missed runs (server was off) run at boot.
+# Install:  cp deploy/windtunnel-digest.* ~/.config/systemd/user/
+#           systemctl --user daemon-reload && systemctl --user enable --now windtunnel-digest.timer
+# Check:    systemctl --user list-timers
+[Unit]
+Description=Run the windtunnel digest weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

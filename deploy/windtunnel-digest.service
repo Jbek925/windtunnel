@@ -1,0 +1,10 @@
+# Sends the weekly plain-English digest to Telegram. Triggered by windtunnel-digest.timer.
+# Needs WINDTUNNEL_TELEGRAM_TOKEN and WINDTUNNEL_TELEGRAM_CHAT_ID in ~/.config/windtunnel.env
+[Unit]
+Description=windtunnel weekly Telegram digest
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/windtunnel
+ExecStart=%h/.local/bin/uv run windtunnel digest --config configs/paper_example.toml
+EnvironmentFile=-%h/.config/windtunnel.env
