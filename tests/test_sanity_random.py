@@ -24,6 +24,7 @@ def test_pipeline_finds_no_proven_edge_on_random_walk(cls, seed: int) -> None:  
         seed=seed,
     )
     assert ev.dsr.dsr < 0.95, ev.verdict  # never "survives multiple testing" on pure noise
+    assert not ev.sharpe_diff_ci.excludes_zero or ev.sharpe_diff_ci.sharpe < 0
     assert "survives the multiple-testing adjustment" not in ev.verdict[0]
 
 
@@ -42,6 +43,8 @@ def test_pipeline_on_shuffled_trending_data() -> None:
         n_boot=300,
     )
     assert ev.dsr.dsr < 0.95
+    assert ev.shuffled_edge < 0.5  # trend rules get no special advantage on shuffled data
+    assert "beat buy-and-hold by more than luck" not in ev.verdict[0]
 
 
 def test_pipeline_detects_a_real_edge() -> None:
@@ -72,3 +75,4 @@ def test_pipeline_detects_a_real_edge() -> None:
     )
     assert ev.sharpe_ci.excludes_zero
     assert ev.strategy_metrics.sharpe > ev.benchmark_metrics[0].sharpe
+    assert ev.sharpe_diff_ci.excludes_zero  # a real edge must also beat holding beyond luck

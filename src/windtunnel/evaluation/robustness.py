@@ -96,6 +96,48 @@ def bootstrap_sharpe_ci(
     return SharpeCI(point, float(lo), float(hi), level)
 
 
+def bootstrap_sharpe_diff_ci(
+    returns: pd.Series,
+    benchmark: pd.Series,
+    periods_per_year: float,
+    *,
+    n_boot: int = 2000,
+    level: float = 0.95,
+    mean_block: float | None = None,
+    seed: int = 0,
+) -> SharpeCI:
+    """Return a CI for ``Sharpe(returns) - Sharpe(benchmark)`` over the same bars.
+
+    This answers "did it beat holding?", not merely "did it make money?". It uses a
+    **paired** bootstrap: each resample takes the same days for both series, so the
+    common market moves cancel out and only the difference is being measured.
+    """
+    both = pd.concat([returns, benchmark], axis=1, join="inner").dropna().to_numpy()
+    n = len(both)
+    point = sharpe_ratio(pd.Series(both[:, 0]), periods_per_year) - sharpe_ratio(
+        pd.Series(both[:, 1]), periods_per_year
+    )
+    if n < 10:
+        return SharpeCI(point, float("nan"), float("nan"), level)
+    block = mean_block or max(5.0, round(n ** (1 / 3)))
+    rng = np.random.default_rng(seed)
+    diffs = np.empty(n_boot)
+    batch = max(1, min(n_boot, 1_000_000 // n))
+    for b0 in range(0, n_boot, batch):
+        k = min(batch, n_boot - b0)
+        idx = stationary_bootstrap_indices(n, k, block, rng)
+        srs = []
+        for col in (0, 1):
+            sample = both[:, col][idx]
+            sd = sample.std(axis=1, ddof=1)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                srs.append(np.where(sd > 0, sample.mean(axis=1) / sd, 0.0))
+        diffs[b0 : b0 + k] = (srs[0] - srs[1]) * np.sqrt(periods_per_year)
+    alpha = (1 - level) / 2
+    lo, hi = np.quantile(diffs, [alpha, 1 - alpha])
+    return SharpeCI(point, float(lo), float(hi), level)
+
+
 def probabilistic_sharpe_ratio(returns: pd.Series, sr_benchmark: float = 0.0) -> float:
     """Return P(true per-bar Sharpe > ``sr_benchmark``), allowing for skew and fat tails.
 
@@ -203,18 +245,37 @@ def verdict(
     ci: SharpeCI,
     dsr: DeflatedSharpe,
     strategy_costs_x2: Metrics | None = None,
+    diff_ci: SharpeCI | None = None,
 ) -> list[str]:
-    """Return plain-English conclusions, each one a sentence. No flattery."""
+    """Return plain-English conclusions, each one a sentence. No flattery.
+
+    The strongest verdict needs the strategy to beat buy-and-hold by more than luck
+    (``diff_ci`` above zero), not just to make money. Making money is easy in an asset
+    that went up a lot.
+    """
     lines: list[str] = []
     bh = benchmarks[0]
     beats_sharpe = [b.label for b in benchmarks if strategy.sharpe > b.sharpe]
     beats_cagr = [b.label for b in benchmarks if strategy.cagr > b.cagr]
-    if len(beats_sharpe) == len(benchmarks) and ci.excludes_zero and dsr.dsr > 0.95:
+    beats_holding_beyond_luck = diff_ci is not None and diff_ci.excludes_zero
+    if (
+        len(beats_sharpe) == len(benchmarks)
+        and ci.excludes_zero
+        and dsr.dsr > 0.95
+        and beats_holding_beyond_luck
+    ):
         lines.append(
             f"Out of sample and after costs, the strategy's Sharpe ({strategy.sharpe:.2f}) beat "
-            f"every benchmark, its {ci.level:.0%} CI excludes zero, and it survives the "
-            f"multiple-testing adjustment (DSR {dsr.dsr:.2f}). This is still one historical "
+            f"every benchmark, beat buy-and-hold by more than luck would explain, and survives "
+            f"the multiple-testing adjustment (DSR {dsr.dsr:.2f}). This is still one historical "
             "path: paper-trade before trusting it."
+        )
+    elif len(beats_sharpe) == len(benchmarks) and diff_ci is not None:
+        lines.append(
+            f"Beat buy-and-hold on this historical path (Sharpe {strategy.sharpe:.2f} vs "
+            f"{bh.sharpe:.2f}), but the difference is within luck: the {diff_ci.level:.0%} CI "
+            f"for how much better it was is [{diff_ci.low:+.2f}, {diff_ci.high:+.2f}], which "
+            "includes zero. NOT proven better than simply holding."
         )
     elif not beats_sharpe:
         lines.append(
@@ -232,6 +293,12 @@ def verdict(
         + ("." if beats_cagr else ": lower return than simply holding.")
         + f" Max drawdown {strategy.max_drawdown:.0%} vs {bh.max_drawdown:.0%}."
     )
+    if diff_ci is not None:
+        lines.append(
+            f"Sharpe advantage over buy & hold: {diff_ci.sharpe:+.2f}, {diff_ci.level:.0%} CI "
+            f"[{diff_ci.low:+.2f}, {diff_ci.high:+.2f}]"
+            + (" (above zero)." if diff_ci.excludes_zero else " (includes zero: could be luck).")
+        )
     if not ci.excludes_zero:
         lines.append(
             f"The {ci.level:.0%} bootstrap CI for Sharpe is [{ci.low:.2f}, {ci.high:.2f}], "

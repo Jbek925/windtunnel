@@ -17,12 +17,13 @@ from windtunnel.evaluation.robustness import (
     DeflatedSharpe,
     SharpeCI,
     bootstrap_sharpe_ci,
+    bootstrap_sharpe_diff_ci,
     deflated_sharpe_ratio,
     parameter_sensitivity,
     verdict,
 )
 from windtunnel.strategies.base import Strategy
-from windtunnel.strategies.benchmark import standard_benchmarks
+from windtunnel.strategies.benchmark import BuyAndHold, standard_benchmarks
 
 
 @dataclass
@@ -40,6 +41,10 @@ class Evaluation:
     dsr: DeflatedSharpe
     sensitivity: pd.DataFrame
     shuffled_sharpe: float
+    shuffled_edge: float
+    """Strategy Sharpe minus buy-and-hold Sharpe on shuffled data. Should be about 0 or below."""
+    sharpe_diff_ci: SharpeCI
+    """CI for (strategy Sharpe - buy & hold Sharpe): the "did it beat holding?" test."""
     verdict: list[str]
     notes: list[str] = field(default_factory=list)
     config: dict[str, Any] = field(default_factory=dict)
@@ -120,8 +125,29 @@ def evaluate(
         trial_sharpes_annual=sens["sharpe"].tolist(),
     )
 
-    shuffled = walk_forward(shuffle_bars(bars, seed=seed), strategy_cls, sizer, costs, **wf_kwargs)
+    diff_ci = bootstrap_sharpe_diff_ci(
+        wf.oos_returns,
+        bench_results["buy & hold"].returns,
+        periods_per_year,
+        n_boot=n_boot,
+        seed=seed,
+    )
+
+    # Sanity check: on shuffled data there are no trends to exploit, but an asset's overall
+    # drift survives shuffling. So compare with buy & hold on the SAME shuffled data. The
+    # strategy's *advantage* there should be about zero or negative (costs).
+    shuffled_bars = shuffle_bars(bars, seed=seed)
+    shuffled = walk_forward(shuffled_bars, strategy_cls, sizer, costs, **wf_kwargs)
     shuffled_sharpe = sharpe_ratio(shuffled.oos_returns, periods_per_year)
+    shuffled_bh = run_backtest(
+        shuffled_bars.iloc[: oos_end + 1],
+        BuyAndHold(),
+        FixedFraction(1.0),
+        costs,
+        periods_per_year=periods_per_year,
+        start=oos_start,
+    )
+    shuffled_edge = shuffled_sharpe - sharpe_ratio(shuffled_bh.returns, periods_per_year)
 
     return Evaluation(
         title=title,
@@ -135,7 +161,9 @@ def evaluate(
         dsr=dsr,
         sensitivity=sens,
         shuffled_sharpe=shuffled_sharpe,
-        verdict=verdict(strat_m, bench_m, ci, dsr, strat_m2),
+        shuffled_edge=shuffled_edge,
+        sharpe_diff_ci=diff_ci,
+        verdict=verdict(strat_m, bench_m, ci, dsr, strat_m2, diff_ci),
         notes=list(notes or []),
         config={
             "strategy": strategy_cls.name,

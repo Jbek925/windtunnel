@@ -248,9 +248,19 @@ def _robustness_rows(ev: Evaluation) -> list[tuple[str, str, str]]:
     ci, dsr = ev.sharpe_ci, ev.dsr
     return [
         (
-            "Sharpe 95% bootstrap CI",
+            "Beat buy & hold? Sharpe advantage, 95% CI",
+            f"{ev.sharpe_diff_ci.sharpe:+.2f} [{ev.sharpe_diff_ci.low:+.2f}, "
+            f"{ev.sharpe_diff_ci.high:+.2f}]",
+            "THE key test. Includes 0 → not proven better than simply holding."
+            if not ev.sharpe_diff_ci.excludes_zero
+            else "Above 0 → beat holding by more than luck (on this one path).",
+        ),
+        (
+            "Made money at all? Sharpe 95% CI",
             f"[{ci.low:.2f}, {ci.high:.2f}]",
-            "Includes 0 → indistinguishable from luck." if not ci.excludes_zero else "Excludes 0.",
+            "Includes 0 → indistinguishable from luck."
+            if not ci.excludes_zero
+            else "Excludes 0, but holding the asset may have made money too; see the row above.",
         ),
         (
             "Configurations tried (N)",
@@ -265,7 +275,8 @@ def _robustness_rows(ev: Evaluation) -> list[tuple[str, str, str]]:
         (
             "Deflated Sharpe ratio",
             f"{dsr.dsr:.2f}",
-            "P(true Sharpe > luck threshold). Want > 0.95.",
+            "P(true Sharpe > luck threshold). Want > 0.95. Measures 'made money', not "
+            "'beat holding'.",
         ),
         (
             "Prob. Sharpe > 0 (PSR)",
@@ -273,9 +284,11 @@ def _robustness_rows(ev: Evaluation) -> list[tuple[str, str, str]]:
             "Ignores multiple testing; always ≥ DSR.",
         ),
         (
-            "Sanity: same pipeline on shuffled data",
-            f"{ev.shuffled_sharpe:.2f}",
-            "Should be ≈ 0 or negative. A clearly positive value suggests a bug.",
+            "Sanity: advantage over buy & hold on shuffled data",
+            f"{ev.shuffled_edge:+.2f}",
+            f"Should be ≈ 0 or negative (shuffling destroys trends). Raw shuffled Sharpe "
+            f"{ev.shuffled_sharpe:.2f} includes the asset's drift. A clearly positive "
+            "advantage suggests a bug.",
         ),
     ]
 

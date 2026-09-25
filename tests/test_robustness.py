@@ -10,6 +10,7 @@ from windtunnel.evaluation.metrics import Metrics
 from windtunnel.evaluation.robustness import (
     SharpeCI,
     bootstrap_sharpe_ci,
+    bootstrap_sharpe_diff_ci,
     deflated_sharpe_ratio,
     expected_max_sharpe,
     parameter_sensitivity,
@@ -100,3 +101,42 @@ def test_verdict_never_claims_edge_without_significance() -> None:
         deflated_sharpe_ratio(_returns(0, 0.01, 500), 365, n_trials=6),
     )
     assert lines[0].startswith("Mixed result") and "no proven edge" in lines[0]
+
+
+def test_diff_ci_identical_series_is_zero() -> None:
+    r = _returns(0.001, 0.02, 800, seed=6)
+    ci = bootstrap_sharpe_diff_ci(r, r, 365, n_boot=300)
+    assert ci.sharpe == pytest.approx(0.0) and ci.low == pytest.approx(0.0)
+    assert not ci.excludes_zero
+
+
+def test_diff_ci_detects_a_clear_advantage_and_not_a_tiny_one() -> None:
+    bench = _returns(0.0005, 0.03, 2000, seed=7)
+    rng = np.random.default_rng(8)
+    clearly_better = bench * 0.5 + 0.002 + rng.normal(0, 0.002, len(bench))
+    slightly_better = bench + rng.normal(0.00002, 0.01, len(bench))  # ~0.7%/yr extra
+    assert bootstrap_sharpe_diff_ci(clearly_better, bench, 365, n_boot=300).excludes_zero
+    assert not bootstrap_sharpe_diff_ci(slightly_better, bench, 365, n_boot=300).excludes_zero
+
+
+def test_verdict_does_not_claim_beating_holding_within_luck() -> None:
+    """Regression: a strategy that made money and edged out buy & hold on one path must
+    not get the top verdict unless it beat holding by more than luck."""
+    strong_abs = SharpeCI(0.9, 0.14, 1.67, 0.95)
+    dsr = deflated_sharpe_ratio(_returns(0.003, 0.01, 2000, seed=9), 365, n_trials=4)
+    assert dsr.dsr > 0.95
+    diff = SharpeCI(0.16, -0.45, 0.80, 0.95)
+    lines = verdict(
+        _m("s", 0.9), [_m("buy & hold", 0.74), _m("vt", 0.63)], strong_abs, dsr, diff_ci=diff
+    )
+    assert lines[0].startswith("Beat buy-and-hold on this historical path")
+    assert "NOT proven better than simply holding" in lines[0]
+    assert any("could be luck" in ln for ln in lines)
+    top = verdict(
+        _m("s", 0.9),
+        [_m("buy & hold", 0.74)],
+        strong_abs,
+        dsr,
+        diff_ci=SharpeCI(0.9, 0.3, 1.5, 0.95),
+    )
+    assert "beat buy-and-hold by more than luck" in top[0]

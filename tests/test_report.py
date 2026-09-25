@@ -30,6 +30,7 @@ def test_report_files_written(ev: Evaluation, tmp_path: Path) -> None:
     html = html_path.read_text()
     assert "Verdict" in html and "data:image/png;base64," in html
     assert "Deflated Sharpe ratio" in html and "a caveat" in html
+    assert "Beat buy &amp; hold? Sharpe advantage" in html
     assert html.count("<img") == 3  # equity, drawdown, sensitivity
     md = md_path.read_text()
     assert md.startswith("# test market: sma_toy")
