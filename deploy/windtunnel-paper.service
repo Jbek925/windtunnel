@@ -1,0 +1,29 @@
+# systemd unit for the windtunnel paper trader.
+# Install (as your normal user, not root):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/windtunnel-paper.service ~/.config/systemd/user/
+#   # edit WorkingDirectory below to your checkout path
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now windtunnel-paper
+#   loginctl enable-linger $USER     # keep running after you log out
+# Logs:   journalctl --user -u windtunnel-paper -f     (and logs/trader.log)
+# Stop:   systemctl --user stop windtunnel-paper       (sends SIGTERM → clean stop)
+
+[Unit]
+Description=windtunnel paper trader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/windtunnel
+ExecStart=%h/.local/bin/uv run windtunnel paper run --config configs/paper_example.toml
+Restart=on-failure
+RestartSec=60
+# Optional alerts: create ~/.config/windtunnel.env containing e.g.
+#   WINDTUNNEL_ALERT_WEBHOOK=https://ntfy.sh/your-secret-topic-name
+# (chmod 600 that file). Live keys would also go there, never in the repo.
+EnvironmentFile=-%h/.config/windtunnel.env
+
+[Install]
+WantedBy=default.target

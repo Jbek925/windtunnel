@@ -1,0 +1,10 @@
+# Alternative to systemd: run one step shortly after each bar closes.
+# `--once` processes at most one new bar and exits, so it is safe to run repeatedly.
+# Edit with `crontab -e`. Paths must be absolute. Times are in the server's timezone;
+# daily bars close at 00:00 UTC.
+
+# Daily bars (server clock in UTC): 00:02 every day
+2 0 * * *  cd $HOME/windtunnel && $HOME/.local/bin/uv run windtunnel paper run --once --config configs/paper_example.toml >> logs/cron.log 2>&1
+
+# Hourly bars: 2 minutes past every hour
+# 2 * * * *  cd $HOME/windtunnel && $HOME/.local/bin/uv run windtunnel paper run --once --config configs/paper_example.toml >> logs/cron.log 2>&1

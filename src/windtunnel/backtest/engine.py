@@ -34,6 +34,84 @@ from windtunnel.data.schema import validate_schema
 from windtunnel.strategies.base import Strategy
 
 
+@dataclass(frozen=True)
+class Fill:
+    """One simulated fill. Shared by the backtest engine and the paper broker."""
+
+    qty: float
+    price: float
+    notional: float
+    fee: float
+    slippage: float
+    weight_before: float
+    weight_after: float
+    cash_after: float
+    units_after: float
+
+    def as_trade_row(self) -> dict[str, float]:
+        """Return the fields recorded in a trade log."""
+        return {
+            "qty": self.qty,
+            "price": self.price,
+            "notional": self.notional,
+            "fee": self.fee,
+            "slippage": self.slippage,
+            "weight_before": self.weight_before,
+            "weight_after": self.weight_after,
+        }
+
+
+def plan_fill(
+    cash: float,
+    units: float,
+    price: float,
+    w_target: float,
+    fee_rate: float,
+    slip_rate: float,
+    rebalance_band: float,
+) -> Fill | None:
+    """Return the fill that moves a (cash, units) account to ``w_target`` at ``price``, or None.
+
+    This is the single source of truth for trade sizing. The backtest, the paper broker
+    and the live broker's order sizing all call it. It returns None when:
+
+    * the account has no equity, or
+    * the change is within ``rebalance_band`` (unless it's an exit to flat, which always trades).
+
+    The trade is sized so the weight *after paying costs* equals the target. Otherwise
+    a 100% buy would pay its fee with borrowed cash.
+    Signed notional N, cost |N|·r:  h + N = w·(E − |N|·r)  ⇒  N = (w·E − h) / (1 + w·r·sign(N))
+    """
+    equity = cash + units * price
+    if equity <= 0:
+        return None
+    held = units * price
+    w_before = held / equity
+    exit_to_flat = w_target == 0.0 and units != 0.0
+    if abs(w_target - w_before) <= rebalance_band and not exit_to_flat:
+        return None
+    rate = fee_rate + slip_rate
+    gap = w_target * equity - held
+    if gap == 0.0:
+        return None
+    signed_notional = gap / (1.0 + w_target * rate * float(np.sign(gap)))
+    notional = abs(signed_notional)
+    fee, slippage = notional * fee_rate, notional * slip_rate
+    cash_after = cash - signed_notional - fee - slippage
+    units_after = units + signed_notional / price
+    return Fill(
+        qty=signed_notional / price,
+        price=price,
+        notional=notional,
+        fee=fee,
+        slippage=slippage,
+        weight_before=w_before,
+        weight_after=units_after * price / (cash_after + units_after * price),
+        cash_after=cash_after,
+        units_after=units_after,
+    )
+
+
 @dataclass
 class BacktestResult:
     """The output of a backtest. All series are indexed by bar open time (UTC)."""
@@ -162,39 +240,11 @@ def simulate(
     for i in range(start, n):
         # 1. open: trade to the target decided at the previous close
         if i > 0:
-            eq_open = cash + units * o[i]
-            w_before = units * o[i] / eq_open if eq_open > 0 else 0.0
-            w_target = tgt[i - 1]
-            exit_to_flat = w_target == 0.0 and units != 0.0
-            if eq_open > 0 and (abs(w_target - w_before) > rebalance_band or exit_to_flat):
-                # Size the trade so the weight *after paying costs* equals the target.
-                # Otherwise a 100% buy would pay its fee with borrowed cash.
-                # Signed notional N, cost |N|·r:  h + N = w·(E − |N|·r)
-                #   ⇒  N = (w·E − h) / (1 + w·r·sign(N))
-                rate = fee_rate + slip_rate[i]
-                held = units * o[i]
-                gap = w_target * eq_open - held
-                signed_notional = gap / (1.0 + w_target * rate * np.sign(gap))
-                qty = signed_notional / o[i]
-                if qty != 0.0:
-                    notional = abs(signed_notional)
-                    fee = notional * fee_rate
-                    sl = notional * slip_rate[i]
-                    cash -= signed_notional + fee + sl
-                    units += qty
-                    fees[i], slip[i] = fee, sl
-                    trades.append(
-                        {
-                            "timestamp": bars.index[i],
-                            "qty": qty,
-                            "price": o[i],
-                            "notional": notional,
-                            "fee": fee,
-                            "slippage": sl,
-                            "weight_before": w_before,
-                            "weight_after": units * o[i] / (cash + units * o[i]),
-                        }
-                    )
+            fill = plan_fill(cash, units, o[i], tgt[i - 1], fee_rate, slip_rate[i], rebalance_band)
+            if fill is not None:
+                cash, units = fill.cash_after, fill.units_after
+                fees[i], slip[i] = fill.fee, fill.slippage
+                trades.append({"timestamp": bars.index[i], **fill.as_trade_row()})
         # 2. hold: funding on the notional held through the bar (perps only)
         if funding_rate:
             funding[i] = units * o[i] * funding_rate

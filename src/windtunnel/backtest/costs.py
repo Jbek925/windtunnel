@@ -68,6 +68,17 @@ class CostModel:
         vol = logret.rolling(self.vol_lookback, min_periods=self.vol_lookback).std().shift(1)
         return vol.fillna(0.0)
 
+    def next_bar_vol(self, completed_bars: pd.DataFrame) -> float:
+        """Return the per-bar vol known at the open of the bar *after* ``completed_bars``.
+
+        Live equivalent of ``trailing_bar_vol(...)`` at the next index: the std of the
+        last ``vol_lookback`` close-to-close log returns. Returns 0 if history is too short.
+        """
+        logret = np.diff(np.log(completed_bars["close"].to_numpy()))
+        if len(logret) < self.vol_lookback:
+            return 0.0
+        return float(np.std(logret[-self.vol_lookback :], ddof=1))
+
     def cost_rate(self, bar_vol: pd.Series | float = 0.0) -> pd.Series | float:
         """Return the cost per unit of notional traded (a fraction, not bps).
 

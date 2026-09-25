@@ -6,6 +6,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -177,6 +178,109 @@ def _cmd_backtest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _make_trader(args: argparse.Namespace) -> Any:
+    """Build (runner, store, cfg) from a config file, honouring the live gate."""
+    from windtunnel.config import load_config
+    from windtunnel.live.gate import resolve_mode
+    from windtunnel.paper.broker import Broker, SimulatedBroker
+    from windtunnel.paper.feed import CcxtFeed
+    from windtunnel.paper.runner import Runner, build_costs, setup_logging
+    from windtunnel.paper.store import Store
+
+    cfg = load_config(args.config)
+    setup_logging(cfg.log_path)
+    gate = resolve_mode(cfg.mode, getattr(args, "live", False))
+    store = Store(cfg.db_path)
+    if gate.missing:
+        store.event(
+            "gate",
+            "LIVE NOT ENABLED, running as paper. Missing: " + "; ".join(gate.missing),
+            "WARNING",
+        )
+        print("live trading NOT enabled; running as PAPER. Missing: " + "; ".join(gate.missing))
+    if store.get("mode") not in (None, gate.mode):
+        raise SystemExit(
+            f"{cfg.db_path} was used in {store.get('mode')!r} mode; use a separate db_path for "
+            f"{gate.mode!r} so paper and real records never mix"
+        )
+    store.set("mode", gate.mode)
+    feed = CcxtFeed(cfg.exchange, cfg.symbol, cfg.timeframe)
+    broker: Broker
+    if gate.mode == "paper":
+        broker = SimulatedBroker(
+            store,
+            build_costs(cfg),
+            strategy_name=cfg.strategy,
+            initial_equity=cfg.initial_equity,
+            rebalance_band=cfg.rebalance_band,
+        )
+    else:
+        from windtunnel.live.ccxt_broker import LiveCcxtBroker
+        from windtunnel.live.gate import load_credentials, make_exchange
+
+        exchange = make_exchange(cfg.exchange, load_credentials())
+        live_broker = LiveCcxtBroker(
+            exchange,
+            cfg.symbol,
+            store,
+            build_costs(cfg),
+            cfg.live,
+            strategy_name=cfg.strategy,
+            rebalance_band=cfg.rebalance_band,
+            shadow=gate.mode == "shadow",
+        )
+        live_broker.reconcile()
+        broker = live_broker
+        print(
+            f"*** {gate.mode.upper()} MODE: cap {cfg.live.max_live_notional:g} "
+            f"{cfg.symbol.split('/')[1]} ***"
+        )
+    return Runner(cfg, feed, broker, store), store, cfg
+
+
+def _cmd_paper(args: argparse.Namespace) -> int:
+    from windtunnel.paper.runner import compare_with_backtest, run_forever
+
+    if args.paper_cmd == "status":
+        from windtunnel.config import load_config
+        from windtunnel.paper.store import Store
+
+        cfg = load_config(args.config)
+        store = Store(cfg.db_path)
+        eq, fills, events = store.table("equity"), store.table("fills"), store.table("events")
+        print(
+            f"mode: {store.get('mode')}  last bar: {store.get('last_bar')}  "
+            f"kill switch: {bool(store.get('kill_switch', False))}"
+        )
+        if len(eq):
+            eq = eq.sort_values("bar_ts")
+            first, last = eq.iloc[0], eq.iloc[-1]
+            print(
+                f"equity {last['equity']:.2f} (start {first['equity']:.2f}), "
+                f"position {last['units']:g} units, target {last['target_weight']:.2f}"
+            )
+        print(f"fills: {len(fills)}")
+        print(events.tail(args.events)[["ts", "level", "kind", "message"]].to_string(index=False))
+        return 0
+
+    runner, store, cfg = _make_trader(args)
+    if args.paper_cmd == "compare":
+        bars = runner.feed.snapshot(cfg.history_bars).completed
+        both = compare_with_backtest(store, bars, cfg)
+        print(both.tail(20).to_string())
+        print(f"\nmax |gap| = {both['gap'].abs().max():.5f} (paper vs backtest, rebased to 1.0)")
+        return 0
+    if args.reset_kill_switch:
+        runner.risk.reset_kill_switch()
+        print("kill switch reset")
+    if args.once:
+        res = runner.step()
+        print(f"{res.status} bar={res.bar_ts} target={res.target} equity={res.equity}")
+        return 0
+    run_forever(runner, cfg.poll_seconds)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser."""
     parser = argparse.ArgumentParser(
@@ -236,6 +340,24 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--seed", type=int, default=0)
     b.add_argument("--out", default="reports", help="output directory")
     b.set_defaults(func=_cmd_backtest)
+
+    p = sub.add_parser("paper", help="paper trader (and gated shadow/live trading)")
+    psub = p.add_subparsers(dest="paper_cmd", required=True)
+    r = psub.add_parser("run", help="run the trading loop")
+    r.add_argument("--config", required=True)
+    r.add_argument("--once", action="store_true", help="process at most one bar, then exit")
+    r.add_argument(
+        "--live",
+        action="store_true",
+        help="one of THREE required opt-ins for real orders (see README)",
+    )
+    r.add_argument("--reset-kill-switch", action="store_true")
+    st = psub.add_parser("status", help="show equity, position and recent events")
+    st.add_argument("--config", required=True)
+    st.add_argument("--events", type=int, default=15)
+    c = psub.add_parser("compare", help="compare paper results with the backtest")
+    c.add_argument("--config", required=True)
+    p.set_defaults(func=_cmd_paper)
     return parser
 
 

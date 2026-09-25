@@ -1,0 +1,35 @@
+# windtunnel trader config. NEVER put API keys in this file: they come from
+# environment variables only (see README, "Going live").
+
+mode = "paper"            # "paper" (default) | "shadow" (real keys, no orders) | "live"
+exchange = "kraken"       # ccxt exchange id; pick one that legally serves your country
+symbol = "BTC/USDT"       # spot pair (Kraken also lists BTC/USD, BTC/EUR)
+timeframe = "1d"          # 1d or 1h
+
+strategy = "ma_trend"     # ma_trend | ts_momentum | zscore_mr | buy_and_hold
+params = { lookback = 100, fast = 20 }   # fixed params: pick them from a walk-forward run
+sizer = "fixed"           # "fixed" (100% per unit signal) or "vol" (volatility targeting)
+vol_target = 0.2
+
+fee_bps = 40.0            # CHECK your exchange's real taker fee at your tier; 40 bps = 0.40%
+slippage_bps = 5.0
+rebalance_band = 0.02
+
+initial_equity = 1000.0   # paper money only
+history_bars = 1000       # must comfortably exceed the strategy's longest lookback
+poll_seconds = 60
+db_path = "data/paper/trader.sqlite"   # use a different file for shadow/live
+log_path = "logs/trader.log"
+
+[risk]
+max_weight = 1.0          # never above 1 (no leverage)
+max_daily_loss = 0.05     # flat for the rest of the UTC day after -5%
+max_drawdown = 0.25       # kill switch at -25% from peak (latched until manual reset)
+stale_after_bars = 1.5
+max_bar_move = 0.25       # don't trade on a >25% single-bar move (possible bad data)
+
+[live]                    # used only in shadow/live mode
+max_live_notional = 50.0  # HARD CAP on position value in quote currency. Change only by hand.
+limit_band_bps = 20.0
+order_timeout_minutes = 10
+reconcile_tolerance = 0.02
