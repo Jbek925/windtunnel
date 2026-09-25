@@ -4,8 +4,8 @@ A research framework for systematic trading strategies, built to give **honest**
 out-of-sample results. It is a learning project. Read `CLAUDE.md` for the rules it
 follows.
 
-> Status: Stage 2 (data layer) is complete. Backtesting, strategies, evaluation and
-> paper/live trading come in later stages.
+> Status: Stage 3 (backtest engine) is complete. Strategies, evaluation and paper/live
+> trading come in later stages.
 
 ## Setup
 

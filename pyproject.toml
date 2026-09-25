@@ -35,6 +35,8 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM", "RUF", "PD", "NPY"]
+# Allow maths symbols (×, σ, →) in strings, comments and docstrings; they aid readability here.
+ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.11"
